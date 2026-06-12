@@ -1,0 +1,28 @@
+# Dependency directories
+node_modules/
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Local environment configuration (CRITICAL: Never commit API keys or private credentials)
+.env
+backend/.env
+frontend/.env
+*.local
+firebase-credentials.json
+*.json
+
+# Static asset outputs (TTS generated audio files)
+backend/static/voice_*.mp3
+
+# Build outputs
+frontend/dist/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Databases & SQLite files
+*.db
+*.sqlite
+
