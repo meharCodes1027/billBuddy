@@ -1,11 +1,11 @@
-# BillBuddy 🦉
+# BillBuddy
 > **Autonomous Utility Coordinator & Safety Safeguards for Elderly Citizens**
 
 BillBuddy is a premium web platform designed to help children manage, audit, and automate utility payments for their elderly parents. The system acts as a background coordinator that polls upcoming bills, executes risk-assessment checks (variance analysis), automates UPI Autopay settlement, and dispatches **spoken voice notes in regional languages** to parents via WhatsApp, alongside transactional text invoice confirmation to children.
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 graph TD
@@ -22,7 +22,7 @@ graph TD
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 1. **Autonomous Execution Pipeline**: Daily scheduler loops through active profiles to coordinate utility checks without human intervention.
 2. **LLM Risk Assessor**: Audits billing statements to detect anomalies (spikes in water/electricity/gas consumption) before triggering automated payment.
@@ -57,7 +57,7 @@ billbuddy/
 
 ---
 
-## ⚙️ Setup & Installation
+## Setup & Installation
 
 ### 1. Prerequisites
 Ensure you have **Python 3.10+** and **Node.js 18+** installed on your system.
@@ -103,7 +103,7 @@ Ensure you have **Python 3.10+** and **Node.js 18+** installed on your system.
 
 ---
 
-## 🔑 Environment Variables
+## Environment Variables
 
 The backend requires a configured `.env` file with the following variables:
 
@@ -125,7 +125,7 @@ The backend requires a configured `.env` file with the following variables:
 
 ---
 
-## 🛠️ Sandbox Testing Guide
+## Sandbox Testing Guide
 
 To test the application end-to-end locally without external network failures or database setup:
 
