@@ -1,8 +1,25 @@
 import axios from 'axios'
 
 // Create axios client pointing to FastAPI local server
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const { origin, hostname, port } = window.location
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      if (port === '8000') {
+        return origin
+      }
+      return 'http://localhost:8000'
+    }
+    return origin
+  }
+  return 'http://localhost:8000'
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  baseURL: getApiBaseUrl(),
   timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
