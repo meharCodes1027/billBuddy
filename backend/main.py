@@ -77,24 +77,9 @@ from fastapi.staticfiles import StaticFiles
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Serve compiled React frontend if built (Single Deployment Support)
+# Serve compiled React frontend assets if built
 if os.path.exists("dist"):
-    from fastapi.responses import FileResponse
     app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-
-    @app.get("/")
-    def read_root():
-        return FileResponse("dist/index.html")
-
-    @app.get("/{catchall:path}")
-    async def serve_react_app(catchall: str):
-        if catchall.startswith("api/") or catchall.startswith("static/") or catchall.startswith("health") or catchall.startswith("receipt/"):
-            raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse("dist/index.html")
-else:
-    @app.get("/")
-    def read_root():
-        return {"app": "BillBuddy API", "status": "running"}
 
 @app.get("/health")
 def health_check():
@@ -575,6 +560,25 @@ async def approve_payment(profile_id: str, payload: ApprovePaymentPayload):
     except Exception as e:
         logger.error(f"Manual payment approval failed: {e}")
         raise HTTPException(status_code=500, detail=f"Approval transaction failed: {str(e)}")
+
+
+# Serve compiled React frontend if built (Single Deployment Support - Catchall at the end)
+if os.path.exists("dist"):
+    from fastapi.responses import FileResponse
+
+    @app.get("/")
+    def read_root():
+        return FileResponse("dist/index.html")
+
+    @app.get("/{catchall:path}")
+    async def serve_react_app(catchall: str):
+        if catchall.startswith("api/") or catchall.startswith("static/") or catchall.startswith("health") or catchall.startswith("receipt/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        return FileResponse("dist/index.html")
+else:
+    @app.get("/")
+    def read_root():
+        return {"app": "BillBuddy API", "status": "running"}
 
 
 
