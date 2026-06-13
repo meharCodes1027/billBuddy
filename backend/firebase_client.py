@@ -122,7 +122,28 @@ async def save_bill(bill_data: Dict) -> str:
     Saves a fetched bill record to the Firestore database or SQLite sandbox.
     """
     logger.info(f"save_bill called with: {bill_data}")
+    user_id = bill_data.get('user_profile_id')
+    biller_id = bill_data.get('biller_id')
+    
     if db:
+        bill_id = bill_data.get('id')
+        if bill_id:
+            doc_ref = db.collection('bills').document(bill_id)
+            doc_ref.set(bill_data)
+            return bill_id
+            
+        # Clean up any existing duplicate docs for the same user and operator in Firestore
+        if user_id and biller_id:
+            try:
+                existing_docs = db.collection('bills')\
+                    .where('user_profile_id', '==', user_id)\
+                    .where('biller_id', '==', biller_id)\
+                    .stream()
+                for doc in existing_docs:
+                    db.collection('bills').document(doc.id).delete()
+            except Exception as e:
+                logger.warning(f"Error cleaning up Firestore duplicates: {e}")
+                
         doc_ref = db.collection('bills').document()
         bill_data['id'] = doc_ref.id
         doc_ref.set(bill_data)
@@ -137,15 +158,15 @@ async def save_bill(bill_data: Dict) -> str:
         # Remove duplicates of same user and operator to keep records fresh
         cursor.execute(
             "DELETE FROM bills WHERE user_profile_id = ? AND biller_id = ?",
-            (bill_data.get('user_profile_id'), bill_data.get('biller_id'))
+            (user_id, biller_id)
         )
         cursor.execute("""
             INSERT INTO bills (id, user_profile_id, biller_id, biller_name, consumer_number, amount, due_date, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             bill_id,
-            bill_data.get('user_profile_id'),
-            bill_data.get('biller_id'),
+            user_id,
+            biller_id,
             bill_data.get('biller_name'),
             bill_data.get('consumer_number'),
             float(bill_data.get('amount') or 0.0),
@@ -164,14 +185,36 @@ async def get_bill_history(user_profile_id: str) -> List[Dict]:
     logger.info(f"get_bill_history called for profile: {user_profile_id}")
     if db:
         docs = db.collection('bills').where('user_profile_id', '==', user_profile_id).stream()
-        return [doc.to_dict() for doc in docs]
+        raw_bills = [doc.to_dict() for doc in docs]
     else:
         conn = _get_sqlite_conn()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM bills WHERE user_profile_id = ?", (user_profile_id,))
         rows = cursor.fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        raw_bills = [dict(r) for r in rows]
+        
+    # Deduplicate raw_bills so we only return the single latest record per biller_id
+    deduped = {}
+    for bill in raw_bills:
+        biller_id = bill.get("biller_id")
+        if not biller_id:
+            continue
+        existing = deduped.get(biller_id)
+        if not existing:
+            deduped[biller_id] = bill
+        else:
+            # If the current one is PAID, it takes precedence
+            if bill.get("status") == "PAID" and existing.get("status") != "PAID":
+                deduped[biller_id] = bill
+            # Otherwise, keep the one with the later due date
+            elif bill.get("status") == existing.get("status") or (bill.get("status") != "PAID" and existing.get("status") != "PAID"):
+                bill_due = bill.get("due_date", "")
+                existing_due = existing.get("due_date", "")
+                if bill_due > existing_due:
+                    deduped[biller_id] = bill
+                    
+    return list(deduped.values())
 
 
 async def save_receipt(receipt_data: Dict) -> str:

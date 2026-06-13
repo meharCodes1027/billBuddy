@@ -154,8 +154,9 @@ async def send_whatsapp_notification(
         from_whatsapp = whatsapp_number if whatsapp_number.startswith("whatsapp:") else f"whatsapp:{whatsapp_number}"
         to_whatsapp = target_phone if target_phone.startswith("whatsapp:") else f"whatsapp:{target_phone}"
         
-        # Determine notification type: receipt vs risk alert
+        # Determine notification type: receipt vs risk alert vs approval
         is_risk = "severity" in notification_data or "is_anomaly" in notification_data
+        is_approval = notification_data.get("is_approval", False)
         
         # Formulate contents
         biller_name = notification_data.get("biller_id") or notification_data.get("biller_name", "Utility")
@@ -164,9 +165,34 @@ async def send_whatsapp_notification(
         txn_id = notification_data.get("transaction_id", "N/A")
         
         # Log local outputs
-        logger.info(f"Notify Agent triggered. To: {to_whatsapp}, IsRisk: {is_risk}")
+        logger.info(f"Notify Agent triggered. To: {to_whatsapp}, IsRisk: {is_risk}, IsApproval: {is_approval}")
         
-        if is_risk:
+        if is_approval:
+            # Child Notification: Autopay Approval Request (WhatsApp Text)
+            body_message = (
+                f"🔔 *BillBuddy APPROVAL REQUEST*\n\n"
+                f"An upcoming utility bill is ready for auto-payment:\n"
+                f"• *Biller:* {biller_name}\n"
+                f"• *Amount:* ₹{amount}\n"
+                f"• *Due Date:* {due_date}\n\n"
+                f"👉 *Action:* Please review and approve this payment in your BillBuddy console dashboard."
+            )
+            
+            logger.info(f"Generated Child Approval Request text:\n{body_message}")
+            
+            if is_mock_twilio:
+                logger.info("Sandbox/Mock Twilio credentials. Skipping API request.")
+                return True
+                
+            client = Client(account_sid, auth_token)
+            client.messages.create(
+                from_=from_whatsapp,
+                to=to_whatsapp,
+                body=body_message
+            )
+            return True
+            
+        elif is_risk:
             # Child Notification: Risk Alert (WhatsApp Text)
             severity = notification_data.get("severity", "medium").upper()
             reason = notification_data.get("reason", "Suspicious variance detected.")

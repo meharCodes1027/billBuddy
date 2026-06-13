@@ -165,51 +165,34 @@ async def run_orchestrator(target_user_id: str = None) -> List[Dict]:
 
             # Settle bill if within the 3-day window
             if days_until_due <= 3:
-                append_trace(f"PAYMENT AGENT: {biller_name} is due in {days_until_due} days (threshold <= 3 days). Executing payment process.", user_id=user_id)
-                
-                if not mandate_token:
-                    append_trace(f"PAYMENT FAILED: No UPI Autopay mandate token linked for User {user_id}. Settle manually.", user_id=user_id)
-                    continue
-                
-                try:
-                    # Settle transaction
-                    receipt = await process_payment(bill, mandate_token)
-                    append_trace(f"PAYMENT AGENT: Succeeded. Transaction Reference: {receipt.transaction_id}", user_id=user_id)
+                if bill.get("status") == "UNPAID":
+                    # Mark as PENDING_APPROVAL and notify the child for manual approval
+                    append_trace(f"PAYMENT AGENT: {biller_name} is due in {days_until_due} days. Requiring Child approval before processing payment.", user_id=user_id)
+                    bill["status"] = "PENDING_APPROVAL"
+                    await firebase_client.save_bill(bill)
                     
-                    # Update cache state
-                    bill["status"] = "PAID"
-                    
-                    # 5. Notify Parent (voice WhatsApp audio)
-                    append_trace(f"NOTIFICATION AGENT: Synthesizing parent voice notification in {language.capitalize()}...", user_id=user_id)
-                    await send_whatsapp_notification(
-                        notification_data=receipt.to_dict(),
-                        target_phone=parent_phone,
-                        language=language
-                    )
-                    
-                    # Notify Child (text WhatsApp summary)
-                    append_trace("NOTIFICATION AGENT: Dispatched payment text receipt alert to child.", user_id=user_id)
-                    await send_whatsapp_notification(
-                        notification_data=receipt.to_dict(),
-                        target_phone=child_phone,
-                        language="english"
-                    )
-                    
-                except Exception as pay_err:
-                    append_trace(f"PAYMENT AGENT EXCEPTION: Payment execution crashed: {pay_err}", user_id=user_id)
-                    
-                    # Send failure notice to child
-                    failure_alert = {
+                    approval_data = {
                         "biller_id": biller_name,
                         "amount": amount,
-                        "severity": "high",
-                        "reason": f"Payment execution error: {pay_err}. Settle manually."
+                        "due_date": due_date_str,
+                        "is_approval": True
                     }
+                    
                     await send_whatsapp_notification(
-                        notification_data=failure_alert,
+                        notification_data=approval_data,
                         target_phone=child_phone,
                         language="english"
                     )
+                    append_trace(f"NOTIFICATION AGENT: Sent WhatsApp Autopay approval request to child at {child_phone}.", user_id=user_id)
+                    continue
+                
+                elif bill.get("status") == "PENDING_APPROVAL":
+                    append_trace(f"PAYMENT AGENT: {biller_name} is due in {days_until_due} days. Awaiting Child approval in dashboard.", user_id=user_id)
+                    continue
+                
+                elif bill.get("status") == "BLOCKED":
+                    append_trace(f"PAYMENT AGENT: {biller_name} is BLOCKED due to risk engine anomaly flags. Awaiting override.", user_id=user_id)
+                    continue
             else:
                 append_trace(f"PAYMENT AGENT: Bill for {biller_name} is due in {days_until_due} days. Deferred payment loop check.", user_id=user_id)
 

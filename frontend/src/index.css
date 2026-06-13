@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
+}
+
 :root {
   font-family: 'Outfit', system-ui, -apple-system, sans-serif;
 }

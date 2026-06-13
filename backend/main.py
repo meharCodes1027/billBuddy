@@ -57,9 +57,17 @@ app = FastAPI(
 )
 
 # CORS configuration
+origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    origins.append(frontend_url.rstrip("/"))
+public_url = os.getenv("PUBLIC_URL")
+if public_url:
+    origins.append(public_url.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -497,6 +505,63 @@ async def override_payment(profile_id: str, payload: OverridePaymentPayload):
     except Exception as e:
         logger.error(f"Manual payment override failed: {e}")
         raise HTTPException(status_code=500, detail=f"Override transaction failed: {str(e)}")
+
+
+class ApprovePaymentPayload(BaseModel):
+    biller_id: str
+
+@app.post("/api/profile/{profile_id}/approve-payment")
+async def approve_payment(profile_id: str, payload: ApprovePaymentPayload):
+    """
+    Manually approves a bill that is pending child approval and processes payment.
+    """
+    user_profile = await firebase_client.get_user_profile(profile_id)
+    if not user_profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+        
+    bills = await firebase_client.get_bill_history(profile_id)
+    matching_bill = None
+    for b in bills:
+        if b.get("biller_id") == payload.biller_id:
+            matching_bill = b
+            break
+            
+    if not matching_bill:
+        raise HTTPException(status_code=404, detail="Billing statement not found")
+        
+    mandate_token = user_profile.get("mandate_token")
+    if not mandate_token:
+        raise HTTPException(status_code=400, detail="Autopay mandate not registered for this profile")
+        
+    try:
+        # 1. Settle transaction directly
+        receipt = await process_payment(matching_bill, mandate_token)
+        
+        # 2. Update status of the bill to PAID
+        matching_bill["status"] = "PAID"
+        await firebase_client.save_bill(matching_bill)
+        
+        # 3. Notify parent (voice) and child (text)
+        language = user_profile.get("preferred_language", "Hindi").lower()
+        parent_phone = user_profile.get("parent_phone")
+        child_phone = user_profile.get("child_phone")
+        
+        await send_whatsapp_notification(
+            notification_data=receipt.to_dict(),
+            target_phone=parent_phone,
+            language=language
+        )
+        await send_whatsapp_notification(
+            notification_data=receipt.to_dict(),
+            target_phone=child_phone,
+            language="english"
+        )
+        
+        return {"status": "success", "receipt": receipt.to_dict()}
+    except Exception as e:
+        logger.error(f"Manual payment approval failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Approval transaction failed: {str(e)}")
+
 
 
 

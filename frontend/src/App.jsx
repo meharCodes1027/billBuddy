@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import axios from 'axios'
-import Spline from '@splinetool/react-spline'
 
 // ------------------------------------------------------------------------------
 // API Configuration & Client Helpers
@@ -41,6 +40,15 @@ const FALLBACK_OPERATORS = {
     { id: 'TATA_PLAY', name: 'Tata Play DTH' },
     { id: 'DISH_TV', name: 'Dish TV DTH' }
   ]
+}
+
+const getBillerName = (billerId) => {
+  if (!billerId) return 'Utility'
+  for (const category in FALLBACK_OPERATORS) {
+    const found = FALLBACK_OPERATORS[category].find(b => b.id === billerId)
+    if (found) return found.name
+  }
+  return billerId
 }
 
 // Loading Spinner Icon SVG helper (No emojis)
@@ -1485,12 +1493,39 @@ const SetupWizard = ({ profile, onSave, showToast, isDark }) => {
 // ------------------------------------------------------------------------------
 // Dashboard Component (Premium Glassmorphic Control Center)
 // ------------------------------------------------------------------------------
-const Dashboard = ({ profile, bills, onTriggerAgent, onOverridePayment, showToast, isDark }) => {
+const Dashboard = ({ profile, bills, onTriggerAgent, onOverridePayment, onApprovePayment, showToast, isDark }) => {
   const [isAutonomous, setIsAutonomous] = useState(true)
   const [isRunningAgent, setIsRunningAgent] = useState(false)
   const [logs, setLogs] = useState([])
   const [activeTab, setActiveTab] = useState('summary')
   const [expandedBill, setExpandedBill] = useState(null)
+
+  const handleApprove = async (billerId) => {
+    try {
+      await onApprovePayment(billerId)
+    } catch (e) {
+      // toast shown by parent
+    }
+  }
+
+  const handleOverride = async (billerId) => {
+    try {
+      await onOverridePayment(billerId)
+    } catch (e) {
+      // toast shown by parent
+    }
+  }
+
+  const getPayDate = (dueDateStr) => {
+    try {
+      const d = new Date(dueDateStr)
+      if (isNaN(d.getTime())) return 'N/A'
+      d.setDate(d.getDate() - 3)
+      return d.toISOString().split('T')[0]
+    } catch (e) {
+      return 'N/A'
+    }
+  }
 
   const handleClearLogs = () => {
     setLogs([])
@@ -1682,7 +1717,7 @@ const Dashboard = ({ profile, bills, onTriggerAgent, onOverridePayment, showToas
                 <p className="text-xs text-slate-400 py-6 text-center italic">No bills linked. Configure them in setup wizard.</p>
               ) : (
                 bills.map((bill, index) => {
-                  const billerName = FALLBACK_OPERATORS.electricity.find(b => b.id === bill.biller_id)?.name || bill.biller_id
+                  const billerName = getBillerName(bill.biller_id)
                   const isPaid = bill.status === 'PAID'
                   const isDueSoon = !isPaid && Math.ceil((new Date(bill.due_date) - new Date()) / (1000 * 60 * 60 * 24)) <= 3
                   
@@ -1709,6 +1744,11 @@ const Dashboard = ({ profile, bills, onTriggerAgent, onOverridePayment, showToas
                           <div>
                             <p className={`text-xs font-bold font-mono ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Rs {bill.amount}</p>
                             <p className="text-[9px] text-slate-400">Due: {bill.due_date}</p>
+                            {!isPaid && (
+                              <p className={`text-[8px] font-medium tracking-wide ${isDark ? 'text-indigo-400' : 'text-[#1a3c6e]'}`}>
+                                Pay Date: {getPayDate(bill.due_date)}
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex items-center space-x-2">
@@ -1717,7 +1757,9 @@ const Dashboard = ({ profile, bills, onTriggerAgent, onOverridePayment, showToas
                                 ? (isDark ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-800 border border-slate-200') 
                                 : bill.status === 'BLOCKED'
                                   ? (isDark ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-rose-50 text-rose-800 border border-rose-200')
-                                  : (isDark ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-amber-50 text-amber-800 border border-slate-200')
+                                  : bill.status === 'PENDING_APPROVAL'
+                                    ? (isDark ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse' : 'bg-amber-50 text-amber-850 border border-amber-200 animate-pulse')
+                                    : (isDark ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-blue-50 text-blue-800 border border-slate-200')
                             }`}>
                               {bill.status}
                             </span>
@@ -1741,10 +1783,36 @@ const Dashboard = ({ profile, bills, onTriggerAgent, onOverridePayment, showToas
                               <p><span className="font-semibold text-rose-400">Risk Assessment:</span> HIGH ANOMALY DETECTED. Auto-payment blocked.</p>
                               <p className="text-slate-400">Would you like to manually override this risk warning and approve the transaction?</p>
                               <button
-                                onClick={() => onOverridePayment(bill.biller_id)}
-                                className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition cursor-pointer"
+                                onClick={() => handleOverride(bill.biller_id)}
+                                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm"
                               >
                                 Override & Pay
+                              </button>
+                            </div>
+                          ) : bill.status === 'PENDING_APPROVAL' ? (
+                            <div className="space-y-2 mt-1">
+                              <p><span className="font-semibold text-amber-400">Approval Required:</span> Autopay is pending child approval.</p>
+                              <p className="text-slate-400">Review bill details and click below to approve and process the payment.</p>
+                              <button
+                                onClick={() => handleApprove(bill.biller_id)}
+                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm"
+                              >
+                                Approve Autopay
+                              </button>
+                            </div>
+                          ) : bill.status === 'UNPAID' ? (
+                            <div className="space-y-2 mt-1">
+                              <p><span className="font-semibold text-emerald-400">Assessment:</span> Safe. Bill variance analysis checks verified.</p>
+                              <p className="text-slate-400">This bill is safe and ready for settlement. Click below to process the payment immediately.</p>
+                              <button
+                                onClick={() => handleApprove(bill.biller_id)}
+                                className={`px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm ${
+                                  isDark 
+                                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white' 
+                                    : 'bg-[#1a3c6e] hover:bg-[#122b50] text-white'
+                                }`}
+                              >
+                                Pay Now
                               </button>
                             </div>
                           ) : (
@@ -2183,6 +2251,23 @@ function App() {
     }
   }
 
+  const handleApprovePayment = async (billerId) => {
+    try {
+      setLoading(true)
+      await api.post(`/api/profile/${profileId}/approve-payment`, { biller_id: billerId })
+      showToast('Autopay approval and payment completed successfully!', 'success')
+      const billsRes = await api.get(`/api/profile/${profileId}/bills`)
+      setBills(billsRes.data)
+      const historyRes = await api.get(`/api/profile/${profileId}/history`)
+      setHistory(historyRes.data)
+    } catch (e) {
+      console.error(e)
+      showToast('Autopay approval failed.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className={`min-h-screen flex items-center justify-center transition-colors duration-200 ${isDark ? 'bg-[#090d16]' : 'bg-white'}`}>
@@ -2273,7 +2358,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate replace to="/dashboard" />} />
           <Route path="/setup" element={<SetupWizard profile={profile} onSave={handleUpdateProfile} showToast={showToast} isDark={isDark} />} />
-          <Route path="/dashboard" element={<Dashboard profile={profile} bills={bills} onTriggerAgent={handleTriggerAgent} onOverridePayment={handleOverridePayment} showToast={showToast} isDark={isDark} />} />
+          <Route path="/dashboard" element={<Dashboard profile={profile} bills={bills} onTriggerAgent={handleTriggerAgent} onOverridePayment={handleOverridePayment} onApprovePayment={handleApprovePayment} showToast={showToast} isDark={isDark} />} />
           <Route path="/history" element={<PaymentHistory history={history} profile={profile} isDark={isDark} />} />
           <Route path="*" element={<Navigate replace to="/dashboard" />} />
         </Routes>
