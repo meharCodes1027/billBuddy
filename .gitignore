@@ -8,9 +8,8 @@ backend/__pycache__/
 .env
 backend/.env
 frontend/.env
-*.local
 firebase-credentials.json
-*.json
+backend/billbuddy-e9ebc-*.json
 
 # Static asset outputs (TTS generated audio files)
 backend/static/voice_*.mp3
